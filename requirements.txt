@@ -1,0 +1,30 @@
+# Antibiotic resistance forecast: the web app (app.py) and the build_*.py scripts.
+# Tested on Python 3.11. These are the exact versions the published forecasts were made with;
+# other versions can shift the model numbers slightly.
+#
+#   python -m venv .venv
+#   .venv\Scripts\activate
+#   pip install -r requirements.txt
+#
+# The PDF scripts (build_forecast_pdf.py, build_model_pdfs.py) also need Chrome or Edge installed.
+# The desktop app (desktop.py) and its installer (build_app.ps1) need requirements-build.txt instead.
+
+# Web app
+fastapi==0.136.1
+uvicorn==0.46.0
+
+# Data
+numpy==2.4.6
+pandas==2.2.3
+openpyxl==3.1.5
+
+# Models
+scikit-learn==1.8.0
+statsmodels==0.15.0
+prophet==1.4.0
+xgboost==3.2.0
+lightgbm==4.7.0
+catboost==1.2.10
+# The PyPI wheel is CPU-only on Windows. On Linux, install it first from the CPU index to skip the
+# multi-GB CUDA build:  pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1

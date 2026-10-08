@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resistance Forecast</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --accent: #2a78d6;
+    --accent-wash: rgba(42, 120, 214, 0.08);
+    --band: rgba(11, 11, 11, 0.035);
+    --track: #cde2fb;
+    --up: #d03b3b;   /* status critical: resistance rising */
+    --down: #0ca30c; /* status good: resistance falling */
+    --shadow: 0 8px 24px rgba(11, 11, 11, 0.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #ffffff;
+      --ink-2: #c3c2b7;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --accent: #3987e5;
+      --accent-wash: rgba(57, 135, 229, 0.14);
+      --band: rgba(255, 255, 255, 0.035);
+      --track: #0d366b;
+      --shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --accent: #3987e5;
+    --accent-wash: rgba(57, 135, 229, 0.14);
+    --band: rgba(255, 255, 255, 0.035);
+    --track: #0d366b;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 48px; }
+  header { margin-bottom: 20px; }
+  h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4px; }
+  h2 { font-size: 16px; font-weight: 600; margin: 0; }
+  .sub { color: var(--ink-2); margin: 0; }
+
+  /* Filters */
+  .filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+  .filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 500; color: var(--ink-2); }
+  select {
+    font: inherit; font-size: 14px; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; min-width: 260px;
+  }
+  select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+
+  /* Stat tiles */
+  .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile .label { font-size: 12px; color: var(--ink-2); }
+  .tile .value { font-size: 28px; font-weight: 600; line-height: 1.2; margin-top: 4px; }
+  .tile .foot { font-size: 12px; color: var(--ink-2); margin-top: 4px; }
+  .delta .up { color: var(--up); }
+  .delta .down { color: var(--down); }
+  .delta .flat { color: var(--muted); }
+
+  /* Chart + organism table on the left, model picker on the right */
+  .layout {
+    display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 16px; align-items: start;
+    grid-template-areas: "chart models" "table models";
+  }
+  .layout > * { min-width: 0; } /* let the wide table scroll inside its card instead of widening the page */
+  .chart-card { grid-area: chart; }
+  .models { grid-area: models; }
+  .org-card { grid-area: table; }
+  @media (min-width: 981px) and (min-height: 820px) {
+    .models { position: sticky; top: 16px; }
+  }
+  .card-head p { margin: 2px 0 0; color: var(--ink-2); font-size: 13px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; list-style: none; padding: 0; margin: 14px 0 6px; font-size: 12px; color: var(--ink-2); }
+  .legend li { display: flex; align-items: center; gap: 6px; }
+  .key { display: inline-block; flex: none; width: 18px; height: 0; border-top: 2px solid var(--accent); }
+  .key.dashed { border-top-style: dashed; }
+  .key.other { border-top-color: var(--muted); }
+
+  .chart { position: relative; height: 320px; border-radius: 6px; }
+  .chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+  .chart svg { display: block; width: 100%; height: 100%; touch-action: pan-y; }
+  .gridline { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdges; }
+  .baseline { stroke: var(--axis); stroke-width: 1; shape-rendering: crispEdges; }
+  .band { fill: var(--band); }
+  .band-label { fill: var(--ink-2); font-size: 11px; font-weight: 500; }
+  .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .other { fill: none; stroke: var(--muted); stroke-opacity: 0.45; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+  .recorded, .forecast { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .forecast { stroke-dasharray: 6 5; }
+  .dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+  .dot-hollow { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+  .end-label { fill: var(--ink); font-size: 12px; font-weight: 600; }
+  .crosshair { stroke: var(--axis); stroke-width: 1; shape-rendering: crispEdges; }
+
+  .tooltip {
+    position: absolute; top: 0; left: 0; pointer-events: none; opacity: 0;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: var(--shadow); padding: 8px 10px; font-size: 12px; white-space: nowrap;
+  }
+  .tooltip.show { opacity: 1; }
+  .t-year { color: var(--ink-2); margin-bottom: 4px; }
+  .t-row { display: flex; align-items: center; gap: 8px; }
+  .t-row strong { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .t-row .lbl { color: var(--ink-2); }
+
+  .toggle {
+    font: inherit; font-size: 13px; color: var(--ink); cursor: pointer;
+    background: none; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; margin-top: 12px;
+  }
+  .toggle:hover { background: var(--band); }
+  .toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Model picker */
+  .models .card-head { margin-bottom: 8px; }
+  .model-cols, .model { display: grid; grid-template-columns: 16px minmax(0, 1fr) 54px 54px; align-items: center; gap: 12px; }
+  .model-cols { font-size: 12px; color: var(--ink-2); padding: 0 11px 4px; border-bottom: 1px solid var(--axis); }
+  .model-cols span:nth-child(n+3) { text-align: right; }
+  .group-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin: 12px 0 4px 11px; }
+  .model { padding: 6px 10px; border: 1px solid transparent; border-radius: 8px; cursor: pointer; }
+  .model:hover { background: var(--band); }
+  .model.is-selected { background: var(--accent-wash); border-color: var(--accent); }
+  .model input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+  .model-main { display: flex; flex-direction: column; min-width: 0; }
+  .model-name { font-weight: 500; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+  .model-meta { font-size: 12px; color: var(--ink-2); }
+  .val { text-align: right; font-variant-numeric: tabular-nums; }
+  .val.v26 { font-weight: 600; }
+  .badge {
+    font-size: 11px; font-weight: 500; line-height: 18px; color: var(--ink);
+    background: var(--accent-wash); border: 1px solid var(--border); border-radius: 999px; padding: 0 7px;
+  }
+  .about { font-size: 12px; color: var(--ink-2); margin: 12px 10px 0; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; margin-top: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 12px; font-weight: 500; color: var(--ink-2); padding: 8px 10px; border-bottom: 1px solid var(--axis); white-space: nowrap; }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.current td { background: var(--accent-wash); }
+  .row-btn {
+    font: inherit; font-weight: 500; color: var(--ink); text-align: left;
+    background: none; border: 0; padding: 0; cursor: pointer;
+  }
+  .row-btn:hover { text-decoration: underline; }
+  .row-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  .meter { display: inline-block; width: 64px; height: 6px; border-radius: 3px; background: var(--track); vertical-align: middle; margin-right: 10px; overflow: hidden; }
+  .meter span { display: block; height: 100%; background: var(--accent); border-radius: 0 3px 3px 0; }
+
+  .notes { margin-top: 16px; font-size: 13px; color: var(--ink-2); }
+  .notes h2 { color: var(--ink); margin-bottom: 6px; }
+  .notes ul { margin: 0; padding-left: 18px; }
+  .notes li + li { margin-top: 4px; }
+
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "chart" "models" "table"; }
+  }
+  @media (max-width: 720px) {
+    main { padding: 20px 16px 32px; }
+    .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .tile .value { font-size: 24px; }
+    .card { padding: 16px; }
+    .filters label { flex: 1 1 100%; }
+    select { min-width: 0; width: 100%; }
+    .chart { height: 280px; }
+    .meter { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Antibiotic resistance forecast</h1>
+    <p class="sub">Recorded resistance 2022–2025 and forecasts for 2026–2027 from 10 models. Pick a model to see its prediction.</p>
+  </header>
+
+  <section class="filters" aria-label="Filters">
+    <label>Organism <select id="organism"></select></label>
+    <label>Antibiotic <select id="antibiotic"></select></label>
+  </section>
+
+  <section class="tiles" aria-label="Summary">
+    <div class="card tile">
+      <div class="label">Recorded 2025</div>
+      <div class="value" id="t-2025"></div>
+      <div class="foot" id="t-2025-delta"></div>
+    </div>
+    <div class="card tile">
+      <div class="label">Forecast 2026</div>
+      <div class="value" id="t-2026"></div>
+      <div class="foot" id="t-2026-delta"></div>
+    </div>
+    <div class="card tile">
+      <div class="label">Forecast 2027</div>
+      <div class="value" id="t-2027"></div>
+      <div class="foot" id="t-2027-delta"></div>
+    </div>
+    <div class="card tile">
+      <div class="label">All 10 models, 2026</div>
+      <div class="value" id="t-range"></div>
+      <div class="foot">Lowest to highest forecast</div>
+    </div>
+  </section>
+
+  <div class="layout">
+    <section class="card chart-card" aria-labelledby="chart-title">
+      <div class="card-head">
+        <h2 id="chart-title"></h2>
+        <p id="chart-sub"></p>
+      </div>
+      <ul class="legend">
+        <li><span class="key"></span>Recorded</li>
+        <li><span class="key dashed"></span><span id="legend-model"></span></li>
+        <li><span class="key other"></span>Other 9 models</li>
+      </ul>
+      <div class="chart" id="chart" tabindex="0" aria-describedby="chart-help">
+        <svg id="chart-svg" role="img" aria-labelledby="chart-title"></svg>
+        <div class="tooltip" id="tooltip" aria-hidden="true"></div>
+      </div>
+      <p id="chart-help" hidden>Use the left and right arrow keys to read each year.</p>
+      <button class="toggle" id="table-toggle" type="button" aria-expanded="false" aria-controls="data-table">Show data table</button>
+      <div class="table-wrap" id="data-table" hidden>
+        <table>
+          <thead>
+            <tr><th>Year</th><th class="num">Recorded</th><th class="num" id="data-table-model"></th><th class="num">All 10 models</th></tr>
+          </thead>
+          <tbody id="data-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card models" aria-labelledby="models-title">
+      <div class="card-head">
+        <h2 id="models-title">Prediction models</h2>
+        <p>Each model's forecast for the selected antibiotic</p>
+      </div>
+      <div class="model-cols" aria-hidden="true"><span></span><span>Model</span><span>2026</span><span>2027</span></div>
+      <div id="model-list" role="radiogroup" aria-labelledby="models-title"></div>
+      <p class="about" id="model-about"></p>
+    </section>
+
+    <section class="card org-card" aria-labelledby="org-title">
+      <div class="card-head">
+        <h2 id="org-title"></h2>
+        <p id="org-sub"></p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Antibiotic</th>
+              <th class="num">Recorded 2025</th>
+              <th class="num">Forecast 2026</th>
+              <th class="num">Forecast 2027</th>
+              <th class="num">Change 2025 → 2027</th>
+            </tr>
+          </thead>
+          <tbody id="org-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <section class="card notes" aria-labelledby="notes-title">
+    <h2 id="notes-title">How the forecasts work</h2>
+    <ul id="notes"></ul>
+  </section>
+</main>
+
+<script id="forecast-data" type="application/json">__DATA__</script>
+<script>
+  const DATA = JSON.parse(document.getElementById("forecast-data").textContent);
+  const YEARS = [...DATA.historyYears, ...DATA.forecastYears];
+  const LAST = DATA.historyYears.length - 1; // index of the last recorded year
+  const MODEL_NAMES = DATA.models.map((m) => m.name);
+  const ORGANISMS = [...new Set(DATA.series.map((s) => s.organism))];
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  const $ = (id) => document.getElementById(id);
+  const state = { organism: null, antibiotic: null, model: DATA.bestModel, hoverIndex: null };
+  const modelRows = [];
+  let geom = null;
+
+  const fmt = (v) => `${v.toFixed(1)}%`;
+  const range = (vals) => `${Math.min(...vals).toFixed(1)}–${Math.max(...vals).toFixed(1)}%`;
+  const seriesOf = (org) => DATA.series.filter((s) => s.organism === org);
+  const current = () => DATA.series.find((s) => s.organism === state.organism && s.antibiotic === state.antibiotic);
+  const modelIndex = () => MODEL_NAMES.indexOf(state.model);
+
+  function make(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function svg(tag, attrs, parent, text) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    if (text !== undefined) node.textContent = text;
+    parent.append(node);
+    return node;
+  }
+
+  // Rising resistance is bad: up arrow in the critical color, down arrow in the good color.
+  function deltaNode(diff, suffix) {
+    const wrap = make("span", "delta");
+    const flat = Math.abs(diff) < 0.05;
+    const up = diff > 0;
+    const icon = make("span", flat ? "flat" : up ? "up" : "down", flat ? "●" : up ? "▲" : "▼");
+    icon.setAttribute("aria-hidden", "true");
+    const text = flat ? `No change${suffix}` : `${up ? "+" : "−"}${Math.abs(diff).toFixed(1)} pts${suffix}`;
+    wrap.append(icon, ` ${text}`);
+    return wrap;
+  }
+
+  function fillSelect(select, values, selected) {
+    select.replaceChildren(...values.map((v) => new Option(v, v, false, v === selected)));
+  }
+
+  function setOrganism(org) {
+    state.organism = org;
+    const list = seriesOf(org);
+    state.antibiotic = list[0].antibiotic; // source order puts the largest 2022-2025 rise first
+    fillSelect($("antibiotic"), list.map((s) => s.antibiotic).sort((a, b) => a.localeCompare(b)), state.antibiotic);
+  }
+
+  function buildModelList() {
+    const box = $("model-list");
+    let family = null;
+    DATA.models.forEach((m) => {
+      if (m.family !== family) {
+        family = m.family;
+        box.append(make("div", "group-label", family));
+      }
+      const label = make("label", "model");
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = "model";
+      input.value = m.name;
+      input.addEventListener("change", () => { state.model = m.name; render(); });
+
+      const name = make("span", "model-name", m.name);
+      if (m.name === DATA.bestModel) {
+        const badge = make("span", "badge", "Best");
+        badge.title = "Lowest average miss in the backtest";
+        name.append(badge);
+      }
+      const main = make("span", "model-main");
+      main.append(name, make("span", "model-meta", `Avg miss ${m.mae.toFixed(1)} pts`));
+
+      const v26 = make("span", "val v26");
+      const v27 = make("span", "val");
+
+      label.append(input, main, v26, v27);
+      box.append(label);
+      modelRows.push({ label, input, v26, v27 });
+    });
+  }
+
+  function niceScale(maxValue) {
+    const top = Math.max(10, maxValue);
+    for (const step of [5, 10, 20, 25]) {
+      const max = Math.ceil(top / step) * step;
+      if (max / step <= 5) return { max: Math.min(max, 100), step };
+    }
+    return { max: 100, step: 25 };
+  }
+
+  function drawChart() {
+    const box = $("chart");
+    const root = $("chart-svg");
+    const s = current();
+    const mi = modelIndex();
+    const W = box.clientWidth;
+    const H = box.clientHeight;
+    const m = { top: 28, right: 52, bottom: 28, left: 44 };
+    const pw = W - m.left - m.right;
+    const ph = H - m.top - m.bottom;
+    const bw = pw / YEARS.length;
+    const { max, step } = niceScale(Math.max(...s.history, ...s.forecast.flat()));
+    const x = (i) => m.left + (i + 0.5) * bw;
+    const y = (v) => m.top + ph - (v / max) * ph;
+    const points = (pairs) => pairs.map(([i, v]) => `${x(i)},${y(v)}`).join(" ");
+    const forecastPath = (p) => [[LAST, s.history[LAST]], ...p.map((v, j) => [LAST + 1 + j, v])];
+
+    hideTip();
+    root.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    root.replaceChildren();
+
+    const bandX = m.left + (LAST + 1) * bw;
+    svg("rect", { x: bandX, y: m.top, width: m.left + pw - bandX, height: ph, class: "band" }, root);
+    svg("text", { x: bandX + 8, y: m.top - 10, class: "band-label" }, root, "Forecast");
+
+    for (let v = 0; v <= max; v += step) {
+      svg("line", { x1: m.left, x2: m.left + pw, y1: y(v), y2: y(v), class: v === 0 ? "baseline" : "gridline" }, root);
+      svg("text", { x: m.left - 8, y: y(v), dy: "0.32em", "text-anchor": "end", class: "tick" }, root, `${v}%`);
+    }
+    YEARS.forEach((year, i) => {
+      const label = bw < 40 ? `'${String(year).slice(2)}` : String(year);
+      svg("text", { x: x(i), y: m.top + ph + 18, "text-anchor": "middle", class: "tick" }, root, label);
+    });
+
+    s.forecast.forEach((p, i) => {
+      if (i !== mi) svg("polyline", { points: points(forecastPath(p)), class: "other" }, root);
+    });
+    const crosshair = svg("line", { y1: m.top, y2: m.top + ph, class: "crosshair", visibility: "hidden" }, root);
+
+    const f = s.forecast[mi];
+    svg("polyline", { points: points(s.history.map((v, i) => [i, v])), class: "recorded" }, root);
+    svg("polyline", { points: points(forecastPath(f)), class: "forecast" }, root);
+    s.history.forEach((v, i) => svg("circle", { cx: x(i), cy: y(v), r: 4.5, class: "dot" }, root));
+    f.forEach((v, j) => svg("circle", { cx: x(LAST + 1 + j), cy: y(v), r: 4, class: "dot-hollow" }, root));
+    svg("text", { x: x(YEARS.length - 1) + 10, y: y(f[f.length - 1]), dy: "0.32em", class: "end-label" }, root, fmt(f[f.length - 1]));
+
+    root.setAttribute("aria-label",
+      `${s.antibiotic} resistance in ${s.organism}. Recorded ${s.history.map(fmt).join(", ")} for ${DATA.historyYears.join(", ")}. ` +
+      `${state.model} forecasts ${f.map(fmt).join(" and ")} for ${DATA.forecastYears.join(" and ")}.`);
+
+    geom = { m, bw, x, y, crosshair };
+  }
+
+  function showTip(i) {
+    if (!geom) return;
+    const s = current();
+    const mi = modelIndex();
+    const { x, y, crosshair } = geom;
+    state.hoverIndex = i;
+    crosshair.setAttribute("x1", x(i));
+    crosshair.setAttribute("x2", x(i));
+    crosshair.setAttribute("visibility", "visible");
+
+    let anchor;
+    const rows = [];
+    if (i <= LAST) {
+      anchor = s.history[i];
+      rows.push(["key", fmt(anchor), "Recorded"]);
+    } else {
+      const j = i - LAST - 1;
+      anchor = s.forecast[mi][j];
+      rows.push(["key dashed", fmt(anchor), state.model]);
+      rows.push(["key other", range(s.forecast.map((p) => p[j])), "All 10 models"]);
+    }
+
+    const tip = $("tooltip");
+    tip.replaceChildren(
+      make("div", "t-year", `${YEARS[i]} · ${i <= LAST ? "recorded" : "forecast"}`),
+      ...rows.map(([key, value, label]) => {
+        const row = make("div", "t-row");
+        row.append(make("span", key), make("strong", "", value), make("span", "lbl", label));
+        return row;
+      }),
+    );
+    tip.classList.add("show");
+
+    const box = $("chart");
+    const tw = tip.offsetWidth;
+    const th = tip.offsetHeight;
+    let left = x(i) + 14;
+    if (left + tw > box.clientWidth) left = x(i) - 14 - tw;
+    const top = Math.max(0, Math.min(y(anchor) - th / 2, box.clientHeight - th));
+    tip.style.transform = `translate(${Math.max(0, left)}px, ${top}px)`;
+  }
+
+  function hideTip() {
+    $("tooltip").classList.remove("show");
+    if (geom) geom.crosshair.setAttribute("visibility", "hidden");
+  }
+
+  function pointerToIndex(event) {
+    const rect = $("chart-svg").getBoundingClientRect();
+    const i = Math.floor((event.clientX - rect.left - geom.m.left) / geom.bw);
+    return i >= 0 && i < YEARS.length ? i : null;
+  }
+
+  function renderDataTable(s, mi) {
+    $("data-table-model").textContent = `${state.model} forecast`;
+    $("data-table-body").replaceChildren(...YEARS.map((year, i) => {
+      const j = i - LAST - 1;
+      const cells = i <= LAST
+        ? [fmt(s.history[i]), "–", "–"]
+        : ["–", fmt(s.forecast[mi][j]), range(s.forecast.map((p) => p[j]))];
+      const row = make("tr");
+      row.append(make("td", "", String(year)), ...cells.map((c) => make("td", "num", c)));
+      return row;
+    }));
+  }
+
+  function renderOrganismTable(mi) {
+    $("org-title").textContent = `All antibiotics in ${state.organism}`;
+    $("org-sub").textContent = `${state.model} forecast, highest 2026 resistance first. Select a row to chart it.`;
+    const rows = seriesOf(state.organism)
+      .map((s) => ({ s, f: s.forecast[mi], last: s.history[LAST] }))
+      .sort((a, b) => b.f[0] - a.f[0]);
+
+    $("org-body").replaceChildren(...rows.map(({ s, f, last }) => {
+      const row = make("tr", s.antibiotic === state.antibiotic ? "current" : "");
+      const button = make("button", "row-btn", s.antibiotic);
+      button.type = "button";
+      if (s.antibiotic === state.antibiotic) button.setAttribute("aria-current", "true");
+      button.addEventListener("click", () => {
+        state.antibiotic = s.antibiotic;
+        render();
+        const smooth = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+        document.querySelector(".tiles").scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+      });
+      const name = make("td");
+      name.append(button);
+
+      const meter = make("span", "meter");
+      const fill = make("span");
+      fill.style.width = `${f[0]}%`;
+      meter.append(fill);
+      const f26 = make("td", "num");
+      f26.append(meter, fmt(f[0]));
+
+      const change = make("td", "num");
+      change.append(deltaNode(f[1] - last, ""));
+
+      row.append(name, make("td", "num", fmt(last)), f26, make("td", "num", fmt(f[1])), change);
+      return row;
+    }));
+  }
+
+  function renderNotes() {
+    const learned = DATA.models.filter((m) => m.family !== "Statistical").map((m) => m.name);
+    const statistical = DATA.models.filter((m) => m.family === "Statistical").map((m) => m.name);
+    const notes = [
+      `${statistical.join(", ")} are fitted to each organism–antibiotic series on its own. ` +
+        `${learned.join(", ")} are trained across all ${DATA.series.length} series and learn the year-to-year change from the previous two years and the organism.`,
+      `"Avg miss" is the backtest error: each model was trained on ${DATA.historyYears[0]}–${DATA.historyYears[LAST - 1]} and asked to predict ${DATA.historyYears[LAST]}. ` +
+        `Simply repeating the ${DATA.historyYears[LAST - 1]} value would have missed by ${DATA.baselineMae.toFixed(1)} pts.`,
+      `${DATA.forecastYears[1]} is forecast from the ${DATA.forecastYears[0]} forecast, so it is less certain. With four years of data per series, treat every forecast as a direction, not a precise number.`,
+      "The source workbook lists only antibiotics whose resistance rose between 2022 and 2025, so the models have learned mostly upward trends.",
+      ...Object.entries(DATA.excluded).map(([org, why]) => `${org} is not included: ${why.charAt(0).toLowerCase()}${why.slice(1)}`),
+    ];
+    $("notes").replaceChildren(...notes.map((n) => make("li", "", n)));
+  }
+
+  function render() {
+    const s = current();
+    const mi = modelIndex();
+    const model = DATA.models[mi];
+    const f = s.forecast[mi];
+    const last = s.history[LAST];
+
+    $("organism").value = state.organism;
+    $("antibiotic").value = state.antibiotic;
+
+    $("t-2025").textContent = fmt(last);
+    $("t-2025-delta").replaceChildren(deltaNode(last - s.history[LAST - 1], ` vs ${DATA.historyYears[LAST - 1]}`));
+    $("t-2026").textContent = fmt(f[0]);
+    $("t-2026-delta").replaceChildren(deltaNode(f[0] - last, ` vs ${DATA.historyYears[LAST]}`));
+    $("t-2027").textContent = fmt(f[1]);
+    $("t-2027-delta").replaceChildren(deltaNode(f[1] - last, ` vs ${DATA.historyYears[LAST]}`));
+    const all2026 = s.forecast.map((p) => p[0]);
+    $("t-range").textContent = `${Math.round(Math.min(...all2026))}–${Math.round(Math.max(...all2026))}%`;
+
+    $("chart-title").textContent = `${s.antibiotic} in ${s.organism}`;
+    $("chart-sub").textContent = `Recorded ${YEARS[0]}–${YEARS[LAST]} · ${state.model} forecast ${YEARS[LAST + 1]}–${YEARS[YEARS.length - 1]}`;
+    $("legend-model").textContent = `${state.model} forecast`;
+    const rank = model.name === DATA.bestModel ? ", the lowest of the 10 models" : "";
+    $("model-about").textContent = `${model.name}: ${model.about}. Avg miss ${model.mae.toFixed(1)} pts in the backtest${rank}.`;
+
+    modelRows.forEach((r, i) => {
+      r.input.checked = i === mi;
+      r.label.classList.toggle("is-selected", i === mi);
+      r.v26.textContent = fmt(s.forecast[i][0]);
+      r.v27.textContent = fmt(s.forecast[i][1]);
+    });
+
+    drawChart();
+    renderDataTable(s, mi);
+    renderOrganismTable(mi);
+  }
+
+  // Wire up
+  fillSelect($("organism"), ORGANISMS, ORGANISMS[0]);
+  setOrganism(ORGANISMS[0]);
+  buildModelList();
+  renderNotes();
+  render();
+
+  $("organism").addEventListener("change", (e) => { setOrganism(e.target.value); render(); });
+  $("antibiotic").addEventListener("change", (e) => { state.antibiotic = e.target.value; render(); });
+
+  const chartSvg = $("chart-svg");
+  const onPointer = (e) => {
+    const i = pointerToIndex(e);
+    i === null ? hideTip() : showTip(i);
+  };
+  chartSvg.addEventListener("pointermove", onPointer);
+  chartSvg.addEventListener("pointerdown", onPointer);
+  chartSvg.addEventListener("pointerleave", hideTip);
+
+  const chartBox = $("chart");
+  chartBox.addEventListener("focus", () => showTip(state.hoverIndex ?? LAST));
+  chartBox.addEventListener("blur", hideTip);
+  chartBox.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const i = (state.hoverIndex ?? LAST) + (e.key === "ArrowRight" ? 1 : -1);
+    showTip(Math.max(0, Math.min(YEARS.length - 1, i)));
+  });
+
+  $("table-toggle").addEventListener("click", (e) => {
+    const table = $("data-table");
+    table.hidden = !table.hidden;
+    e.currentTarget.setAttribute("aria-expanded", String(!table.hidden));
+    e.currentTarget.textContent = table.hidden ? "Show data table" : "Hide data table";
+  });
+
+  let lastWidth = chartBox.clientWidth;
+  new ResizeObserver(() => {
+    if (chartBox.clientWidth !== lastWidth) {
+      lastWidth = chartBox.clientWidth;
+      drawChart();
+    }
+  }).observe(chartBox);
+</script>
+</body>
+</html>

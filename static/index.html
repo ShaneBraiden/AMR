@@ -1,0 +1,1135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resistance Forecast</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --accent: #2a78d6;
+    --accent-wash: rgba(42, 120, 214, 0.08);
+    --band: rgba(11, 11, 11, 0.035);
+    --track: #cde2fb;
+    --up: #d03b3b;   /* status critical: resistance rising */
+    --down: #0ca30c; /* status good: resistance falling */
+    --shadow: 0 8px 24px rgba(11, 11, 11, 0.10);
+    --button-bg: #1f63b8;
+    --button-ink: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #ffffff;
+      --ink-2: #c3c2b7;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --accent: #3987e5;
+      --accent-wash: rgba(57, 135, 229, 0.14);
+      --band: rgba(255, 255, 255, 0.035);
+      --track: #0d366b;
+      --shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      --button-bg: #3987e5;
+      --button-ink: #0b0b0b;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --accent: #3987e5;
+    --accent-wash: rgba(57, 135, 229, 0.14);
+    --band: rgba(255, 255, 255, 0.035);
+    --track: #0d366b;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --button-bg: #3987e5;
+    --button-ink: #0b0b0b;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; } /* also for elements whose class sets a display */
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1180px; margin: 0 auto; padding: 32px 24px 48px; }
+  header { margin-bottom: 20px; }
+  h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4px; }
+  h2 { font-size: 16px; font-weight: 600; margin: 0; }
+  .sub { color: var(--ink-2); margin: 0; }
+  a { color: var(--accent); }
+
+  /* Filters */
+  .filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+  .filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 500; color: var(--ink-2); }
+  select, input[type="number"] {
+    font: inherit; font-size: 14px; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; min-width: 260px;
+  }
+  input[type="number"] { min-width: 0; width: 150px; font-variant-numeric: tabular-nums; }
+  input[aria-invalid="true"] { border-color: var(--up); }
+  select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .status { margin: -4px 0 16px; font-size: 13px; color: var(--ink-2); }
+  .status.error { color: var(--up); }
+  .horizon { margin: -4px 0 16px; font-size: 13px; color: var(--ink-2); }
+
+  /* Dim the results while a new year loads; the delay keeps fast responses from flickering. */
+  .tiles, .layout { transition: opacity 0.15s; }
+  .loading .tiles, .loading .layout { opacity: 0.55; transition-delay: 0.15s; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+
+  /* Training: shown before the first training, while (re)training and when training failed */
+  .train { margin-bottom: 16px; }
+  .train h2 { margin-bottom: 4px; }
+  .train p { margin: 0; color: var(--ink-2); font-size: 13px; max-width: 75ch; }
+  .train p.train-error { color: var(--up); overflow-wrap: anywhere; }
+  .progress { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; margin: 14px 0 6px; max-width: 520px; }
+  .progress span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.3s; }
+  .train .train-meta { font-size: 12px; font-variant-numeric: tabular-nums; margin-top: 6px; }
+  .btn-primary {
+    font: inherit; font-weight: 600; color: var(--button-ink); background: var(--button-bg);
+    border: 0; border-radius: 8px; padding: 9px 16px; margin-top: 14px; cursor: pointer;
+  }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .retrain { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 12px; font-size: 12px; color: var(--ink-2); }
+  .retrain .toggle { margin-top: 0; }
+  .toggle:disabled { opacity: 0.5; cursor: default; }
+
+  /* Stat tiles */
+  .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile .label { font-size: 12px; color: var(--ink-2); }
+  .tile .value { font-size: 28px; font-weight: 600; line-height: 1.2; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .tile .foot { font-size: 12px; color: var(--ink-2); margin-top: 4px; }
+  .delta .up { color: var(--up); }
+  .delta .down { color: var(--down); }
+  .delta .flat { color: var(--muted); }
+
+  /* Chart + organism table on the left, model picker on the right */
+  .layout {
+    display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 16px; align-items: start;
+    grid-template-areas: "chart models" "table models";
+  }
+  .layout > * { min-width: 0; } /* let the wide table scroll inside its card instead of widening the page */
+  .chart-card { grid-area: chart; }
+  .models { grid-area: models; }
+  .org-card { grid-area: table; }
+  @media (min-width: 981px) and (min-height: 820px) {
+    .models { position: sticky; top: 16px; }
+  }
+  .card-head p { margin: 2px 0 0; color: var(--ink-2); font-size: 13px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; list-style: none; padding: 0; margin: 14px 0 6px; font-size: 12px; color: var(--ink-2); }
+  .legend li { display: flex; align-items: center; gap: 6px; }
+  .key { display: inline-block; flex: none; width: 18px; height: 0; border-top: 2px solid var(--accent); }
+  .key.dashed { border-top-style: dashed; }
+  .key.other { border-top-color: var(--muted); }
+
+  .chart { position: relative; height: 320px; border-radius: 6px; }
+  .chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+  .chart svg { display: block; width: 100%; height: 100%; touch-action: pan-y; }
+  .gridline { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdges; }
+  .baseline { stroke: var(--axis); stroke-width: 1; shape-rendering: crispEdges; }
+  .band { fill: var(--band); }
+  .band-label { fill: var(--ink-2); font-size: 11px; font-weight: 500; }
+  .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .other { fill: none; stroke: var(--muted); stroke-opacity: 0.45; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+  .recorded, .forecast { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .forecast { stroke-dasharray: 6 5; }
+  .dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+  .dot-hollow { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+  .end-label { fill: var(--ink); font-size: 12px; font-weight: 600; }
+  .crosshair { stroke: var(--axis); stroke-width: 1; shape-rendering: crispEdges; }
+
+  .tooltip {
+    position: absolute; top: 0; left: 0; pointer-events: none; opacity: 0;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: var(--shadow); padding: 8px 10px; font-size: 12px; white-space: nowrap;
+  }
+  .tooltip.show { opacity: 1; }
+  .t-year { color: var(--ink-2); margin-bottom: 4px; }
+  .t-row { display: flex; align-items: center; gap: 8px; }
+  .t-row strong { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .t-row .lbl { color: var(--ink-2); }
+
+  .toggle {
+    font: inherit; font-size: 13px; color: var(--ink); cursor: pointer;
+    background: none; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; margin-top: 12px;
+  }
+  .toggle:hover { background: var(--band); }
+  .toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Model picker */
+  .models .card-head { margin-bottom: 8px; }
+  .model-cols, .model { display: grid; grid-template-columns: 16px minmax(0, 1fr) 54px 68px; align-items: center; gap: 12px; }
+  .model-cols { font-size: 12px; color: var(--ink-2); padding: 0 11px 4px; border-bottom: 1px solid var(--axis); }
+  .model-cols span:nth-child(n+3) { text-align: right; }
+  .group-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin: 12px 0 4px 11px; }
+  .model { padding: 6px 10px; border: 1px solid transparent; border-radius: 8px; cursor: pointer; }
+  .model:hover { background: var(--band); }
+  .model.is-selected { background: var(--accent-wash); border-color: var(--accent); }
+  .model input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+  .model-main { display: flex; flex-direction: column; min-width: 0; }
+  .model-name { font-weight: 500; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+  .model-meta { font-size: 12px; color: var(--ink-2); }
+  .val { text-align: right; font-variant-numeric: tabular-nums; }
+  .val.target { font-weight: 600; }
+  .val .delta { font-size: 12px; }
+  .badge {
+    font-size: 11px; font-weight: 500; line-height: 18px; color: var(--ink);
+    background: var(--accent-wash); border: 1px solid var(--border); border-radius: 999px; padding: 0 7px;
+  }
+  .about { font-size: 12px; color: var(--ink-2); margin: 12px 10px 0; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; margin-top: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 12px; font-weight: 500; color: var(--ink-2); padding: 8px 10px; border-bottom: 1px solid var(--axis); white-space: nowrap; }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.current td { background: var(--accent-wash); }
+  .row-btn {
+    font: inherit; font-weight: 500; color: var(--ink); text-align: left;
+    background: none; border: 0; padding: 0; cursor: pointer;
+  }
+  .row-btn:hover { text-decoration: underline; }
+  .row-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  .meter { display: inline-block; width: 64px; height: 6px; border-radius: 3px; background: var(--track); vertical-align: middle; margin-right: 10px; overflow: hidden; }
+  .meter span { display: block; height: 100%; background: var(--accent); border-radius: 0 3px 3px 0; }
+
+  .notes { margin-top: 16px; font-size: 13px; color: var(--ink-2); }
+  .notes h2 { color: var(--ink); margin-bottom: 6px; }
+  .notes ul { margin: 0; padding-left: 18px; }
+  .notes li + li { margin-top: 4px; }
+  .api { margin: 12px 0 0; font-size: 12px; color: var(--ink-2); }
+  code { font: 12px ui-monospace, "Cascadia Mono", Consolas, monospace; }
+
+  /* Header: the title, and in the desktop app the workbook and export actions beside it */
+  .head-row { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 24px; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .actions .toggle { margin-top: 0; }
+  .data-line { margin: 8px 0 0; font-size: 12px; color: var(--ink-2); }
+  .action-status { margin: 8px 0 0; font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
+  .action-status.error { color: var(--up); }
+  .action-status.busy::before {
+    content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 8px; vertical-align: -1px;
+    border: 2px solid var(--track); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .action-status.busy::before { animation-duration: 3s; } }
+  .link-btn { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; margin-left: 8px; cursor: pointer; text-decoration: underline; }
+  .link-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  .menu { position: relative; }
+  .menu-list {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; width: 280px; padding: 6px;
+    display: flex; flex-direction: column; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow);
+  }
+  .menu-list button {
+    font: inherit; font-size: 13px; font-weight: 500; color: var(--ink); text-align: left;
+    background: none; border: 0; border-radius: 6px; padding: 8px 10px; cursor: pointer;
+  }
+  .menu-list button:hover, .menu-list button:focus-visible { background: var(--band); outline: none; }
+  .menu-list small { display: block; font-size: 12px; font-weight: 400; color: var(--ink-2); }
+  .train-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .train-actions .toggle { margin-top: 14px; }
+
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "chart" "models" "table"; }
+  }
+  @media (max-width: 720px) {
+    main { padding: 20px 16px 32px; }
+    .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .tile .value { font-size: 24px; }
+    .card { padding: 16px; }
+    .filters label { flex: 1 1 100%; }
+    select, input[type="number"] { min-width: 0; width: 100%; }
+    .chart { height: 280px; }
+    .meter { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="head-row">
+      <div>
+        <h1>Antibiotic resistance forecast</h1>
+        <p class="sub" id="subtitle">Recorded resistance, and what 10 models predict for any year you pick. Pick a model to see its prediction.</p>
+      </div>
+      <div class="actions" id="actions" hidden>
+        <button class="toggle" id="open-btn" type="button">Open workbook…</button>
+        <div class="menu">
+          <button class="toggle" id="export-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="export-menu" disabled>Export ▾</button>
+          <div class="menu-list" id="export-menu" role="menu" aria-labelledby="export-btn" hidden>
+            <button type="button" role="menuitem" data-kind="csv">Forecasts as CSV<small>Every model's forecast, up to the year shown</small></button>
+            <button type="button" role="menuitem" data-kind="excel">Forecasts as Excel<small>With the recorded values and model accuracy</small></button>
+            <button type="button" role="menuitem" data-kind="summary_pdf">Summary report (PDF)<small>All models, the next two years</small></button>
+            <button type="button" role="menuitem" data-kind="model_pdfs">Per-model reports (PDF)<small>One report for each model, in a new folder</small></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="data-line" id="data-line" hidden></p>
+    <p class="action-status" id="action-status" role="status" hidden></p>
+  </header>
+
+  <section class="card train" id="train-panel" aria-labelledby="train-title" hidden>
+    <h2 id="train-title" aria-live="polite">Connecting to the server…</h2>
+    <p id="train-text"></p>
+    <div class="progress" id="train-progress" role="progressbar" aria-labelledby="train-title" aria-valuemin="0" aria-valuemax="100" hidden><span id="train-bar"></span></div>
+    <p class="train-meta" id="train-meta"></p>
+    <div class="train-actions">
+      <button class="btn-primary" id="train-btn" type="button" hidden>Train models</button>
+      <button class="toggle" id="log-btn" type="button" hidden>Open the log file</button>
+      <button class="toggle" id="dismiss-btn" type="button" hidden>Dismiss</button>
+    </div>
+  </section>
+
+  <div id="dashboard" hidden>
+  <section class="filters" aria-label="Filters">
+    <label>Organism <select id="organism"></select></label>
+    <label>Antibiotic <select id="antibiotic"></select></label>
+    <label><span id="year-label">Forecast year</span>
+      <input type="number" id="year" inputmode="numeric" step="1" aria-describedby="status">
+    </label>
+  </section>
+  <p class="status" id="status" role="status" hidden></p>
+  <p class="horizon" id="horizon" hidden></p>
+
+  <section class="tiles" aria-label="Summary">
+    <div class="card tile">
+      <div class="label" id="t-last-label"></div>
+      <div class="value" id="t-last"></div>
+      <div class="foot" id="t-last-delta"></div>
+    </div>
+    <div class="card tile">
+      <div class="label" id="t-forecast-label"></div>
+      <div class="value" id="t-forecast"></div>
+      <div class="foot" id="t-forecast-delta"></div>
+    </div>
+    <div class="card tile">
+      <div class="label" id="t-avg-label"></div>
+      <div class="value" id="t-avg"></div>
+      <div class="foot" id="t-avg-delta"></div>
+    </div>
+    <div class="card tile">
+      <div class="label" id="t-range-label"></div>
+      <div class="value" id="t-range"></div>
+      <div class="foot">Lowest to highest forecast</div>
+    </div>
+  </section>
+
+  <div class="layout">
+    <section class="card chart-card" aria-labelledby="chart-title">
+      <div class="card-head">
+        <h2 id="chart-title"></h2>
+        <p id="chart-sub"></p>
+      </div>
+      <ul class="legend">
+        <li><span class="key"></span>Recorded</li>
+        <li><span class="key dashed"></span><span id="legend-model"></span></li>
+        <li><span class="key other"></span><span id="legend-other"></span></li>
+      </ul>
+      <div class="chart" id="chart" tabindex="0" aria-describedby="chart-help">
+        <svg id="chart-svg" role="img" aria-labelledby="chart-title"></svg>
+        <div class="tooltip" id="tooltip" aria-hidden="true"></div>
+      </div>
+      <p id="chart-help" hidden>Use the left and right arrow keys to read each year.</p>
+      <button class="toggle" id="table-toggle" type="button" aria-expanded="false" aria-controls="data-table">Show data table</button>
+      <div class="table-wrap" id="data-table" hidden>
+        <table>
+          <thead>
+            <tr><th>Year</th><th class="num">Recorded</th><th class="num" id="data-table-model"></th><th class="num" id="data-table-all"></th></tr>
+          </thead>
+          <tbody id="data-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card models" aria-labelledby="models-title">
+      <div class="card-head">
+        <h2 id="models-title">Prediction models</h2>
+        <p id="models-sub"></p>
+      </div>
+      <div class="model-cols" aria-hidden="true"><span></span><span>Model</span><span id="col-year"></span><span id="col-change"></span></div>
+      <div id="model-list" role="radiogroup" aria-labelledby="models-title"></div>
+      <p class="about" id="model-about"></p>
+    </section>
+
+    <section class="card org-card" aria-labelledby="org-title">
+      <div class="card-head">
+        <h2 id="org-title"></h2>
+        <p id="org-sub"></p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Antibiotic</th>
+              <th class="num" id="org-col-last"></th>
+              <th class="num" id="org-col-forecast"></th>
+              <th class="num" id="org-col-all"></th>
+              <th class="num" id="org-col-change"></th>
+            </tr>
+          </thead>
+          <tbody id="org-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <section class="card notes" aria-labelledby="notes-title">
+    <h2 id="notes-title">How the forecasts work</h2>
+    <ul id="notes"></ul>
+    <p class="api" id="api-note">The numbers on this page come from this server's API: <a id="api-link" href="/api/forecast?year=2026"><code>/api/forecast?year=…</code></a>, filterable with <code>&amp;organism=</code> and <code>&amp;antibiotic=</code>. <a href="/docs">API docs</a></p>
+    <div class="retrain">
+      <span id="trained-text"></span>
+      <button class="toggle" id="retrain-btn" type="button" title="Read the workbook again and retrain all the models">Retrain models</button>
+    </div>
+  </section>
+  </div>
+</main>
+
+<script>
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const $ = (id) => document.getElementById(id);
+
+  // Filled by initDashboard(): META from /api/meta after each training, the forecasts from /api/forecast per year.
+  let META, LAST, LAST_YEAR, N_MODELS, MODEL_NAMES, ORGANISMS;
+  let YEARS = [];
+  const state = { organism: null, antibiotic: null, model: null, year: null, hoverIndex: null };
+  const forecastCache = new Map();
+  const modelRows = [];
+  let geom = null;
+  let requestId = 0;
+
+  const fmt = (v) => `${v.toFixed(1)}%`;
+  const range = (vals) => `${Math.min(...vals).toFixed(1)}–${Math.max(...vals).toFixed(1)}%`;
+  const mean = (vals) => vals.reduce((a, b) => a + b, 0) / vals.length;
+  const seriesOf = (org) => META.series.filter((s) => s.organism === org);
+  const current = () => META.series.find((s) => s.organism === state.organism && s.antibiotic === state.antibiotic);
+  const modelIndex = () => MODEL_NAMES.indexOf(state.model);
+  const atTarget = (s) => s.forecast.map((p) => p[p.length - 1]); // every model's value in the chosen year
+
+  function make(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function svg(tag, attrs, parent, text) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    if (text !== undefined) node.textContent = text;
+    parent.append(node);
+    return node;
+  }
+
+  // Rising resistance is bad: up arrow in the critical color, down arrow in the good color.
+  function deltaNode(diff, suffix, compact = false) {
+    const wrap = make("span", "delta");
+    const flat = Math.abs(diff) < 0.05;
+    const up = diff > 0;
+    const icon = make("span", flat ? "flat" : up ? "up" : "down", flat ? "●" : up ? "▲" : "▼");
+    icon.setAttribute("aria-hidden", "true");
+    const amount = `${up ? "+" : "−"}${Math.abs(diff).toFixed(1)}`;
+    const text = compact ? (flat ? "0.0" : amount) : flat ? `No change${suffix}` : `${amount} pts${suffix}`;
+    wrap.append(icon, ` ${text}`);
+    return wrap;
+  }
+
+  function fillSelect(select, values, selected) {
+    select.replaceChildren(...values.map((v) => new Option(v, v, false, v === selected)));
+  }
+
+  function setOrganism(org) {
+    state.organism = org;
+    const list = seriesOf(org);
+    state.antibiotic = list[0].antibiotic; // source order puts the largest 2022-2025 rise first
+    fillSelect($("antibiotic"), list.map((s) => s.antibiotic).sort((a, b) => a.localeCompare(b)), state.antibiotic);
+  }
+
+  function setStatus(text, isError = false) {
+    $("status").textContent = text;
+    $("status").hidden = !text;
+    $("status").classList.toggle("error", isError);
+    $("year").setAttribute("aria-invalid", String(isError));
+  }
+
+  async function getJSON(url, options) {
+    const res = await fetch(url, options);
+    const body = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(typeof body?.detail === "string" ? body.detail : `server returned ${res.status}`);
+    return body;
+  }
+
+  // Fetch (or reuse) every model's forecasts up to `year`, attach them to the series and redraw.
+  async function loadYear(year) {
+    const id = ++requestId;
+    document.body.classList.add("loading");
+    try {
+      const fc = forecastCache.get(year) ?? await getJSON(`/api/forecast?year=${year}`);
+      // A newer year was picked, or the models were retrained, while this one loaded.
+      if (id !== requestId) return;
+      forecastCache.set(year, fc);
+      const byKey = new Map(fc.series.map((s) => [`${s.organism}|${s.antibiotic}`, s.forecast]));
+      META.series.forEach((s) => { s.forecast = byKey.get(`${s.organism}|${s.antibiotic}`); });
+      state.year = fc.year;
+      YEARS = [...META.historyYears, ...fc.years];
+      $("api-link").href = `/api/forecast?year=${year}`;
+      render();
+    } catch (err) {
+      if (id === requestId) setStatus(`Could not load the ${year} forecast: ${err.message}.`, true);
+    } finally {
+      if (id === requestId) document.body.classList.remove("loading");
+    }
+  }
+
+  function buildModelList() {
+    const box = $("model-list");
+    box.replaceChildren();
+    modelRows.length = 0;
+    let family = null;
+    META.models.forEach((m) => {
+      if (m.family !== family) {
+        family = m.family;
+        box.append(make("div", "group-label", family));
+      }
+      const label = make("label", "model");
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = "model";
+      input.value = m.name;
+      input.addEventListener("change", () => { state.model = m.name; render(); });
+
+      const name = make("span", "model-name", m.name);
+      if (m.name === META.bestModel) {
+        const badge = make("span", "badge", "Best");
+        badge.title = "Lowest average miss in the backtest";
+        name.append(badge);
+      }
+      const main = make("span", "model-main");
+      main.append(name, make("span", "model-meta", `Avg miss ${m.mae.toFixed(1)} pts`));
+
+      const value = make("span", "val target");
+      const change = make("span", "val");
+
+      label.append(input, main, value, change);
+      box.append(label);
+      modelRows.push({ label, input, value, change });
+    });
+  }
+
+  function niceScale(maxValue) {
+    const top = Math.max(10, maxValue);
+    for (const step of [5, 10, 20, 25]) {
+      const max = Math.ceil(top / step) * step;
+      if (max / step <= 5) return { max: Math.min(max, 100), step };
+    }
+    return { max: 100, step: 25 };
+  }
+
+  function drawChart() {
+    const box = $("chart");
+    const root = $("chart-svg");
+    const s = current();
+    const mi = modelIndex();
+    const W = box.clientWidth;
+    const H = box.clientHeight;
+    const m = { top: 28, right: 52, bottom: 28, left: 44 };
+    const pw = W - m.left - m.right;
+    const ph = H - m.top - m.bottom;
+    const bw = pw / YEARS.length;
+    const { max, step } = niceScale(Math.max(...s.history, ...s.forecast.flat()));
+    const x = (i) => m.left + (i + 0.5) * bw;
+    const y = (v) => m.top + ph - (v / max) * ph;
+    const points = (pairs) => pairs.map(([i, v]) => `${x(i)},${y(v)}`).join(" ");
+    const forecastPath = (p) => [[LAST, s.history[LAST]], ...p.map((v, j) => [LAST + 1 + j, v])];
+    const dense = bw < 28; // far-off years squeeze the columns: smaller dots, fewer labels
+
+    hideTip();
+    root.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    root.replaceChildren();
+
+    const bandX = m.left + (LAST + 1) * bw;
+    svg("rect", { x: bandX, y: m.top, width: m.left + pw - bandX, height: ph, class: "band" }, root);
+    svg("text", { x: bandX + 8, y: m.top - 10, class: "band-label" }, root, "Forecast");
+
+    for (let v = 0; v <= max; v += step) {
+      svg("line", { x1: m.left, x2: m.left + pw, y1: y(v), y2: y(v), class: v === 0 ? "baseline" : "gridline" }, root);
+      svg("text", { x: m.left - 8, y: y(v), dy: "0.32em", "text-anchor": "end", class: "tick" }, root, `${v}%`);
+    }
+    YEARS.forEach((year, i) => {
+      if (bw < 24 && (YEARS.length - 1 - i) % 2) return; // every other year, always keeping the chosen one
+      const label = bw < 40 ? `'${String(year).slice(2)}` : String(year);
+      svg("text", { x: x(i), y: m.top + ph + 18, "text-anchor": "middle", class: "tick" }, root, label);
+    });
+
+    s.forecast.forEach((p, i) => {
+      if (i !== mi) svg("polyline", { points: points(forecastPath(p)), class: "other" }, root);
+    });
+    const crosshair = svg("line", { y1: m.top, y2: m.top + ph, class: "crosshair", visibility: "hidden" }, root);
+
+    const f = s.forecast[mi];
+    svg("polyline", { points: points(s.history.map((v, i) => [i, v])), class: "recorded" }, root);
+    svg("polyline", { points: points(forecastPath(f)), class: "forecast" }, root);
+    s.history.forEach((v, i) => svg("circle", { cx: x(i), cy: y(v), r: dense ? 3.5 : 4.5, class: "dot" }, root));
+    f.forEach((v, j) => svg("circle", { cx: x(LAST + 1 + j), cy: y(v), r: dense ? 3 : 4, class: "dot-hollow" }, root));
+    svg("text", { x: x(YEARS.length - 1) + 10, y: y(f[f.length - 1]), dy: "0.32em", class: "end-label" }, root, fmt(f[f.length - 1]));
+
+    const first = YEARS[LAST + 1];
+    const said = f.length === 1
+      ? `${fmt(f[0])} for ${first}`
+      : `${fmt(f[0])} for ${first} and ${fmt(f[f.length - 1])} for ${state.year}`;
+    root.setAttribute("aria-label",
+      `${s.antibiotic} resistance in ${s.organism}. Recorded ${s.history.map(fmt).join(", ")} for ${META.historyYears.join(", ")}. ` +
+      `${state.model} forecasts ${said}.`);
+
+    geom = { m, bw, x, y, crosshair };
+  }
+
+  function showTip(i) {
+    if (!geom) return;
+    const s = current();
+    const mi = modelIndex();
+    const { x, y, crosshair } = geom;
+    state.hoverIndex = i;
+    crosshair.setAttribute("x1", x(i));
+    crosshair.setAttribute("x2", x(i));
+    crosshair.setAttribute("visibility", "visible");
+
+    let anchor;
+    const rows = [];
+    if (i <= LAST) {
+      anchor = s.history[i];
+      rows.push(["key", fmt(anchor), "Recorded"]);
+    } else {
+      const j = i - LAST - 1;
+      anchor = s.forecast[mi][j];
+      rows.push(["key dashed", fmt(anchor), state.model]);
+      rows.push(["key other", range(s.forecast.map((p) => p[j])), `All ${N_MODELS} models`]);
+    }
+
+    const tip = $("tooltip");
+    tip.replaceChildren(
+      make("div", "t-year", `${YEARS[i]} · ${i <= LAST ? "recorded" : "forecast"}`),
+      ...rows.map(([key, value, label]) => {
+        const row = make("div", "t-row");
+        row.append(make("span", key), make("strong", "", value), make("span", "lbl", label));
+        return row;
+      }),
+    );
+    tip.classList.add("show");
+
+    const box = $("chart");
+    const tw = tip.offsetWidth;
+    const th = tip.offsetHeight;
+    let left = x(i) + 14;
+    if (left + tw > box.clientWidth) left = x(i) - 14 - tw;
+    const top = Math.max(0, Math.min(y(anchor) - th / 2, box.clientHeight - th));
+    tip.style.transform = `translate(${Math.max(0, left)}px, ${top}px)`;
+  }
+
+  function hideTip() {
+    $("tooltip").classList.remove("show");
+    if (geom) geom.crosshair.setAttribute("visibility", "hidden");
+  }
+
+  function pointerToIndex(event) {
+    if (!geom) return null;
+    const rect = $("chart-svg").getBoundingClientRect();
+    const i = Math.floor((event.clientX - rect.left - geom.m.left) / geom.bw);
+    return i >= 0 && i < YEARS.length ? i : null;
+  }
+
+  function renderDataTable(s, mi) {
+    $("data-table-model").textContent = `${state.model} forecast`;
+    $("data-table-all").textContent = `All ${N_MODELS} models`;
+    $("data-table-body").replaceChildren(...YEARS.map((year, i) => {
+      const j = i - LAST - 1;
+      const cells = i <= LAST
+        ? [fmt(s.history[i]), "–", "–"]
+        : ["–", fmt(s.forecast[mi][j]), range(s.forecast.map((p) => p[j]))];
+      const row = make("tr");
+      row.append(make("td", "", String(year)), ...cells.map((c) => make("td", "num", c)));
+      return row;
+    }));
+  }
+
+  function renderOrganismTable(mi) {
+    $("org-title").textContent = `All antibiotics in ${state.organism}`;
+    $("org-sub").textContent = `${state.model} forecast, highest ${state.year} resistance first. Select a row to chart it.`;
+    $("org-col-last").textContent = `Recorded ${LAST_YEAR}`;
+    $("org-col-forecast").textContent = `Forecast ${state.year}`;
+    $("org-col-all").textContent = `All ${N_MODELS} models, ${state.year}`;
+    $("org-col-change").textContent = `Change ${LAST_YEAR} → ${state.year}`;
+    const rows = seriesOf(state.organism)
+      .map((s) => ({ s, target: s.forecast[mi][s.forecast[mi].length - 1], last: s.history[LAST] }))
+      .sort((a, b) => b.target - a.target);
+
+    $("org-body").replaceChildren(...rows.map(({ s, target, last }) => {
+      const row = make("tr", s.antibiotic === state.antibiotic ? "current" : "");
+      const button = make("button", "row-btn", s.antibiotic);
+      button.type = "button";
+      if (s.antibiotic === state.antibiotic) button.setAttribute("aria-current", "true");
+      button.addEventListener("click", () => {
+        state.antibiotic = s.antibiotic;
+        render();
+        const smooth = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+        document.querySelector(".tiles").scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+      });
+      const name = make("td");
+      name.append(button);
+
+      const meter = make("span", "meter");
+      const fill = make("span");
+      fill.style.width = `${target}%`;
+      meter.append(fill);
+      const forecast = make("td", "num");
+      forecast.append(meter, fmt(target));
+
+      const change = make("td", "num");
+      change.append(deltaNode(target - last, ""));
+
+      row.append(name, make("td", "num", fmt(last)), forecast, make("td", "num", range(atTarget(s))), change);
+      return row;
+    }));
+  }
+
+  const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+  const countWord = (n) => NUMBER_WORDS[n] ?? String(n);
+
+  function renderNotes() {
+    const learned = META.models.filter((m) => m.family !== "Statistical").map((m) => m.name);
+    const statistical = META.models.filter((m) => m.family === "Statistical").map((m) => m.name);
+    const trees = learned.filter((n) => !["LSTM", "GRU"].includes(n));
+    const years = META.historyYears;
+    const allRose = META.series.every((s) => s.history[LAST] > s.history[0]);
+    const notes = [
+      `${statistical.join(", ")} are fitted to each organism–antibiotic series on its own and project its trend forward. ` +
+        `${learned.join(", ")} are trained across all ${META.series.length} series and learn the year-to-year change from the previous two years and the organism.`,
+      `The models are trained once for each workbook and the results are saved, so they open instantly next time; Retrain reads the workbook again to pick up any edits. ` +
+        `For the year you pick, the learned models add their predicted change to the year before, ` +
+        `one year at a time from ${META.minYear}, feeding each forecast back in, so later years build on earlier forecasts and grow less certain.`,
+      `"Avg miss" is the backtest error: each model was trained on ${years[0]}–${years[LAST - 1]} and asked to predict ${LAST_YEAR}. ` +
+        `Simply repeating the ${years[LAST - 1]} value would have missed by ${META.baselineMae.toFixed(1)} pts.`,
+      `Forecasts are capped at 0–100%. Rolled far ahead, the models part ways: ARIMA and Prophet follow the trend in a straight line, often up to the 100% cap ` +
+        `by ${META.maxYear}, while the tree models (${trees.join(", ")}) learned year-to-year change from only ${countWord(years.length - 2)} ` +
+        `step${years.length === 3 ? "" : "s"} per series and tend to zigzag up and down instead of following a trend.`,
+      `With ${countWord(years.length)} recorded years per series, treat every forecast as a direction, not a precise number, and anything past ${META.minYear + 1} as a scenario.`,
+      ...(allRose ? [`The source workbook lists only antibiotics whose resistance rose between ${years[0]} and ${LAST_YEAR}, so the models have learned mostly upward trends.`] : []),
+      ...Object.entries(META.excluded).map(([org, why]) => `${org} is not included: ${why.charAt(0).toLowerCase()}${why.slice(1)}`),
+    ];
+    $("notes").replaceChildren(...notes.map((n) => make("li", "", n)));
+  }
+
+  function render() {
+    const s = current();
+    const mi = modelIndex();
+    const model = META.models[mi];
+    const f = s.forecast[mi];
+    const target = f[f.length - 1];
+    const last = s.history[LAST];
+    const all = atTarget(s);
+    const avg = mean(all);
+    const Y = state.year;
+    const vsLast = ` vs ${LAST_YEAR}`;
+
+    $("organism").value = state.organism;
+    $("antibiotic").value = state.antibiotic;
+    $("year").value = Y; // also undoes an out-of-range entry, so its error goes too
+    setStatus("");
+
+    $("t-last-label").textContent = `Recorded ${LAST_YEAR}`;
+    $("t-last").textContent = fmt(last);
+    $("t-last-delta").replaceChildren(deltaNode(last - s.history[LAST - 1], ` vs ${META.historyYears[LAST - 1]}`));
+    $("t-forecast-label").textContent = `Forecast ${Y} · ${state.model}`;
+    $("t-forecast").textContent = fmt(target);
+    $("t-forecast-delta").replaceChildren(deltaNode(target - last, vsLast));
+    $("t-avg-label").textContent = `Average of ${N_MODELS} models, ${Y}`;
+    $("t-avg").textContent = fmt(avg);
+    $("t-avg-delta").replaceChildren(deltaNode(avg - last, vsLast));
+    $("t-range-label").textContent = `All ${N_MODELS} models, ${Y}`;
+    $("t-range").textContent = `${Math.round(Math.min(...all))}–${Math.round(Math.max(...all))}%`;
+
+    const ahead = Y - LAST_YEAR;
+    $("horizon").hidden = ahead <= 2;
+    $("horizon").textContent = `${Y} is ${ahead} years past the last recorded year. Each forecast year builds on the one before it, ` +
+      `so read this as where the current trend leads, not a precise value.`;
+
+    $("chart-title").textContent = `${s.antibiotic} in ${s.organism}`;
+    $("chart-sub").textContent = `Recorded ${YEARS[0]}–${LAST_YEAR} · ${state.model} forecast ` +
+      (ahead === 1 ? `${Y}` : `${YEARS[LAST + 1]}–${Y}`);
+    $("legend-model").textContent = `${state.model} forecast`;
+    $("legend-other").textContent = `Other ${N_MODELS - 1} models`;
+    const rank = model.name === META.bestModel ? `, the lowest of the ${N_MODELS} models` : "";
+    $("model-about").textContent = `${model.name}: ${model.about}. Avg miss ${model.mae.toFixed(1)} pts in the backtest${rank}.`;
+
+    $("models-sub").textContent = `Each model's forecast for ${Y} for the selected antibiotic`;
+    $("col-year").textContent = String(Y);
+    $("col-change").textContent = `vs ${LAST_YEAR}`;
+    modelRows.forEach((r, i) => {
+      r.input.checked = i === mi;
+      r.label.classList.toggle("is-selected", i === mi);
+      r.value.textContent = fmt(all[i]);
+      r.change.replaceChildren(deltaNode(all[i] - last, "", true));
+    });
+
+    drawChart();
+    renderDataTable(s, mi);
+    renderOrganismTable(mi);
+  }
+
+  // Set up the dashboard for a freshly trained set of models. After a retrain it keeps the organism,
+  // antibiotic, model and year the user had picked, as long as they still exist.
+  function initDashboard(meta) {
+    META = meta;
+    LAST = META.historyYears.length - 1;
+    LAST_YEAR = META.historyYears[LAST];
+    N_MODELS = META.models.length;
+    MODEL_NAMES = META.models.map((m) => m.name);
+    ORGANISMS = [...new Set(META.series.map((s) => s.organism))];
+    forecastCache.clear();
+    if (!MODEL_NAMES.includes(state.model)) state.model = META.bestModel;
+
+    const input = $("year");
+    input.min = META.minYear;
+    input.max = META.maxYear;
+    $("year-label").textContent = `Forecast year (${META.minYear}–${META.maxYear})`;
+    $("subtitle").textContent = `Recorded resistance ${META.historyYears[0]}–${LAST_YEAR}, and what ${N_MODELS} models predict ` +
+      `for any year you pick. Pick a model to see its prediction.`;
+
+    const org = ORGANISMS.includes(state.organism) ? state.organism : ORGANISMS[0];
+    const antibiotic = state.antibiotic;
+    fillSelect($("organism"), ORGANISMS, org);
+    setOrganism(org);
+    if (seriesOf(org).some((s) => s.antibiotic === antibiotic)) {
+      state.antibiotic = antibiotic;
+      $("antibiotic").value = antibiotic;
+    }
+    buildModelList();
+    renderNotes();
+  }
+
+  async function openDashboard() {
+    let meta;
+    try {
+      meta = await getJSON("/api/meta");
+    } catch (err) {
+      showTrainError(`Could not load the trained models: ${err.message}.`);
+      return;
+    }
+    initDashboard(meta);
+    const at = new Date(meta.trainedAt).toLocaleString([], { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    $("trained-text").textContent = `Models trained ${at} in ${meta.seconds} s.`;
+    $("data-line").textContent = `Data: ${meta.workbook} · ${META.series.length} organism–antibiotic series · models trained ${at}`;
+    $("data-line").hidden = false;
+    $("export-btn").disabled = false;
+    $("dashboard").hidden = false; // before drawing: a hidden chart has no width to lay out against
+
+    const asked = state.year ?? Number(new URLSearchParams(location.search).get("year"));
+    const valid = Number.isInteger(asked) && asked >= META.minYear && asked <= META.maxYear;
+    await loadYear(valid ? asked : META.minYear);
+  }
+
+  // --- Training: the models train only when the user asks, and the page follows the progress ---
+
+  let polling = null;
+
+  let dismissedError = null;
+
+  function renderTraining(st) {
+    const training = st.state === "training";
+    const failed = st.state === "failed";
+    const newWorkbook = st.trainingWorkbook && st.trainingWorkbook !== st.workbook;
+    $("train-panel").hidden = !(training || (failed && st.error !== dismissedError) || !st.trained);
+    $("train-title").textContent = training
+      ? (st.trained && !newWorkbook ? "Retraining the models" : "Training the models")
+      : failed ? `Training on ${st.trainingWorkbook ?? "the workbook"} failed` : "Train the forecasting models";
+    $("train-text").textContent = training
+      ? (st.trained
+        ? `Training on ${st.trainingWorkbook}. The forecasts for ${st.workbook} stay available until the new models are ready.`
+        : `Training on ${st.trainingWorkbook}. This takes about a minute, once for each workbook: the results are saved, so next time it opens instantly.`)
+      : failed ? st.error
+      : "The 10 models are trained on the workbook when you ask. Training takes about a minute; after that, every forecast year is instant.";
+    $("train-text").classList.toggle("train-error", failed);
+    $("log-btn").hidden = !(failed && st.logFile && desktopApi());
+    $("dismiss-btn").hidden = !(failed && st.trained);
+    $("open-btn").disabled = training;
+
+    $("train-progress").hidden = !training;
+    if (training) {
+      const pct = Math.round(st.progress * 100);
+      $("train-bar").style.width = `${pct}%`;
+      $("train-progress").setAttribute("aria-valuenow", String(pct));
+      $("train-meta").textContent = st.model
+        ? `${st.model} · model ${st.step} of ${st.steps} · ${pct}% · ${Math.round(st.elapsed)} s`
+        : `Loading the workbook and libraries… ${Math.round(st.elapsed)} s`;
+    } else {
+      $("train-meta").textContent = !failed ? ""
+        : st.logFile ? `The full error is in the log file: ${st.logFile}` : "The full error is in the server console.";
+    }
+    $("train-btn").hidden = training;
+    $("train-btn").textContent = failed ? "Try again" : "Train models";
+    $("retrain-btn").disabled = training;
+  }
+
+  function showTrainError(message) {
+    $("train-panel").hidden = false;
+    $("train-title").textContent = "Something went wrong";
+    $("train-text").textContent = message;
+    $("train-text").classList.add("train-error");
+    $("train-progress").hidden = true;
+    $("train-meta").textContent = "";
+    $("train-btn").hidden = true;
+  }
+
+  async function pollTraining() {
+    let st;
+    try {
+      st = await getJSON("/api/status");
+    } catch (err) {
+      $("train-meta").textContent = `Lost contact with the server (${err.message}). Retrying…`;
+      polling = setTimeout(pollTraining, 2000);
+      return;
+    }
+    renderTraining(st);
+    if (st.state === "training") {
+      polling = setTimeout(pollTraining, 500);
+      return;
+    }
+    polling = null;
+    if (st.state === "ready") await openDashboard();
+  }
+
+  async function startTraining() {
+    dismissedError = null;
+    try {
+      renderTraining(await getJSON("/api/train", { method: "POST" }));
+    } catch (err) {
+      showTrainError(`Could not start training: ${err.message}.`);
+      return;
+    }
+    if (!polling) pollTraining();
+  }
+
+  async function boot() {
+    let st;
+    try {
+      st = await getJSON("/api/status");
+    } catch (err) {
+      showTrainError(`Could not reach the forecast server: ${err.message}. Is app.py running?`);
+      return;
+    }
+    renderTraining(st);
+    if (st.trained) await openDashboard(); // a retrain in progress keeps the current models usable
+    if (st.state === "training") pollTraining();
+  }
+
+  // --- Desktop app: open a workbook and save exports through the app's own dialogs ---
+  // window.pywebview.api exists only inside the desktop app (desktop.py); in a browser these controls stay hidden.
+
+  const desktopApi = () => window.pywebview?.api ?? null;
+  const EXPORT_WORK = {
+    csv: "Saving the forecasts…",
+    excel: "Saving the forecasts…",
+    summary_pdf: "Creating the PDF report… this takes a few seconds.",
+    model_pdfs: "Creating a PDF report for each model… this takes about 20 seconds.",
+  };
+  let exportBusy = false;
+
+  function setAction(text, { error = false, busy = false, path = null } = {}) {
+    const line = $("action-status");
+    line.replaceChildren(text);
+    line.hidden = !text;
+    line.classList.toggle("error", error);
+    line.classList.toggle("busy", busy);
+    if (path) {
+      const open = make("button", "link-btn", "Open");
+      open.type = "button";
+      open.addEventListener("click", () => desktopApi()?.open_path(path));
+      line.append(open);
+    }
+  }
+
+  function initDesktop() {
+    if (!desktopApi() || !$("actions").hidden) return;
+    $("actions").hidden = false;
+    $("api-note").hidden = true; // its links would take the app's window away from the dashboard
+  }
+
+  async function openWorkbook() {
+    let res;
+    $("open-btn").disabled = true;
+    try {
+      res = await desktopApi().choose_workbook();
+    } catch (err) {
+      res = { ok: false, error: `Could not open the workbook: ${err.message}.` };
+    } finally {
+      $("open-btn").disabled = false;
+    }
+    if (res.cancelled) return;
+    if (!res.ok) {
+      setAction(res.error, { error: true });
+      return;
+    }
+    dismissedError = null;
+    setAction("");
+    try {
+      const st = await getJSON("/api/status");
+      renderTraining(st);
+      if (st.state === "training") {
+        if (!polling) pollTraining();
+      } else {
+        await openDashboard();
+        setAction(`Opened ${st.workbook}. Its models were trained before, so the forecasts are ready.`);
+      }
+    } catch (err) {
+      setAction(`Could not refresh the dashboard: ${err.message}.`, { error: true });
+    }
+  }
+
+  async function exportAs(kind) {
+    closeMenu();
+    if (exportBusy || !state.year) return;
+    const api = desktopApi();
+    exportBusy = true;
+    $("export-btn").disabled = true;
+    setAction("");
+    try {
+      const target = await api.choose_export_path(kind, state.year);
+      if (target.cancelled) return;
+      if (!target.ok) {
+        setAction(target.error, { error: true });
+        return;
+      }
+      setAction(EXPORT_WORK[kind], { busy: true });
+      const res = await api.export(kind, state.year, target.path);
+      if (res.ok) setAction(`Saved ${res.label} to ${res.path}`, { path: res.path });
+      else setAction(res.error, { error: true });
+    } catch (err) {
+      setAction(`The export failed: ${err.message}.`, { error: true });
+    } finally {
+      exportBusy = false;
+      $("export-btn").disabled = false;
+    }
+  }
+
+  const menuItems = () => [...$("export-menu").querySelectorAll("button")];
+
+  function openMenu() {
+    $("export-menu").hidden = false;
+    $("export-btn").setAttribute("aria-expanded", "true");
+    menuItems()[0].focus();
+  }
+
+  function closeMenu() {
+    if ($("export-menu").hidden) return;
+    $("export-menu").hidden = true;
+    $("export-btn").setAttribute("aria-expanded", "false");
+  }
+
+  $("open-btn").addEventListener("click", openWorkbook);
+  $("export-btn").addEventListener("click", () => ($("export-menu").hidden ? openMenu() : closeMenu()));
+  $("export-menu").addEventListener("click", (e) => {
+    const item = e.target.closest("button[data-kind]");
+    if (item) exportAs(item.dataset.kind);
+  });
+  $("export-menu").addEventListener("keydown", (e) => {
+    const items = menuItems();
+    const i = items.indexOf(document.activeElement);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
+    } else if (e.key === "Escape" || e.key === "Tab") {
+      closeMenu();
+      if (e.key === "Escape") $("export-btn").focus();
+    }
+  });
+  document.addEventListener("click", (e) => { if (!e.target.closest(".menu")) closeMenu(); });
+  $("log-btn").addEventListener("click", () => desktopApi()?.open_log());
+  $("dismiss-btn").addEventListener("click", () => {
+    dismissedError = $("train-text").textContent;
+    $("train-panel").hidden = true;
+  });
+  window.addEventListener("pywebviewready", initDesktop);
+  initDesktop();
+
+  // Wire up
+  $("organism").addEventListener("change", (e) => { setOrganism(e.target.value); render(); });
+  $("antibiotic").addEventListener("change", (e) => { state.antibiotic = e.target.value; render(); });
+  $("year").addEventListener("change", (e) => {
+    if (!META) return;
+    const year = Number(e.target.value);
+    if (!Number.isInteger(year) || year < META.minYear || year > META.maxYear) {
+      const showing = state.year ? ` Still showing ${state.year}.` : "";
+      setStatus(`Enter a whole year from ${META.minYear} to ${META.maxYear}.${showing}`, true);
+      return;
+    }
+    history.replaceState(null, "", `?year=${year}`);
+    loadYear(year);
+  });
+
+  const chartSvg = $("chart-svg");
+  const onPointer = (e) => {
+    const i = pointerToIndex(e);
+    i === null ? hideTip() : showTip(i);
+  };
+  chartSvg.addEventListener("pointermove", onPointer);
+  chartSvg.addEventListener("pointerdown", onPointer);
+  chartSvg.addEventListener("pointerleave", hideTip);
+
+  const chartBox = $("chart");
+  chartBox.addEventListener("focus", () => { if (geom) showTip(Math.min(state.hoverIndex ?? LAST, YEARS.length - 1)); });
+  chartBox.addEventListener("blur", hideTip);
+  chartBox.addEventListener("keydown", (e) => {
+    if (!geom || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+    e.preventDefault();
+    const i = (state.hoverIndex ?? LAST) + (e.key === "ArrowRight" ? 1 : -1);
+    showTip(Math.max(0, Math.min(YEARS.length - 1, i)));
+  });
+
+  $("table-toggle").addEventListener("click", (e) => {
+    const table = $("data-table");
+    table.hidden = !table.hidden;
+    e.currentTarget.setAttribute("aria-expanded", String(!table.hidden));
+    e.currentTarget.textContent = table.hidden ? "Show data table" : "Hide data table";
+  });
+
+  let lastWidth = chartBox.clientWidth;
+  new ResizeObserver(() => {
+    if (chartBox.clientWidth !== lastWidth) {
+      lastWidth = chartBox.clientWidth;
+      if (geom) drawChart();
+    }
+  }).observe(chartBox);
+
+  $("train-btn").addEventListener("click", startTraining);
+  $("retrain-btn").addEventListener("click", startTraining);
+
+  boot();
+</script>
+</body>
+</html>

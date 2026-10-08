@@ -1,0 +1,7 @@
+# Everything needed to build the desktop app and its installer (build_app.ps1), on top of requirements.txt.
+# Inno Setup 6 compiles the installer:  winget install JRSoftware.InnoSetup
+-r requirements.txt
+
+pywebview==6.2.1
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.8
